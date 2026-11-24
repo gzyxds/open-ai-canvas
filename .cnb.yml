@@ -1,0 +1,44 @@
+# CNB 云原生构建：push main 后构建 web / backend / yingce-agent 三个镜像，
+# 推送到 CNB Docker 制品库（内置流水线触发者凭据，无需额外登录）。
+#
+# 构建产物：
+#   ${CNB_DOCKER_REGISTRY}/<slug>-web:<commit short>
+#   ${CNB_DOCKER_REGISTRY}/<slug>-backend:<commit short>
+#   ${CNB_DOCKER_REGISTRY}/<slug>-agent:<commit short>
+#
+# 服务器侧 docker-compose.deploy.yml 的 .env 对应替换为：
+#   CANVAS_WEB_IMAGE=<registry>/<slug>-web:<commit short>
+#   CANVAS_BACKEND_IMAGE=<registry>/<slug>-backend:<commit short>
+#   CANVAS_YINGCE_AGENT_IMAGE=<registry>/<slug>-agent:<commit short>
+#
+# 国内加速说明：
+# - Go 依赖走 goproxy.cn（backend Dockerfile 的 GOPROXY 构建参数）
+# - 基础镜像（bun/golang/nginx/node/alpine）由 CNB 构建环境就近拉取
+# - 若后端 npm ci 过慢，可给两个 build 追加 --build-arg 并改造 Dockerfile 支持 NPM 镜像
+
+main:
+  push:
+    - services:
+        - docker # 声明后流水线内可直接使用 docker 命令
+      stages:
+        - name: 构建 web 镜像
+          script: |
+            docker build -f Dockerfile \
+              -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}-web:${CNB_COMMIT_SHORT} .
+
+        - name: 构建 backend 镜像
+          script: |
+            docker build -f backend/Dockerfile \
+              --build-arg GOPROXY=https://goproxy.cn,direct \
+              -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}-backend:${CNB_COMMIT_SHORT} .
+
+        - name: 构建 yingce-agent 镜像
+          script: |
+            docker build -f yingce-agent/Dockerfile \
+              -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}-agent:${CNB_COMMIT_SHORT} .
+
+        - name: 推送镜像到 CNB 制品库
+          script: |
+            docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}-web:${CNB_COMMIT_SHORT}
+            docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}-backend:${CNB_COMMIT_SHORT}
+            docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}-agent:${CNB_COMMIT_SHORT}
